@@ -1,4 +1,11 @@
+
 .DS_Store
 
 open tofu/.terraform
 open tofu/.terraform.lock.hcl
+webservice/venv
+webservice/__pycache__
+webservice/.pytest_cache
+
+.env
+webservice/.env

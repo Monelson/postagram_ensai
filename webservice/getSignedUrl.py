@@ -8,11 +8,14 @@
 import logging
 import boto3
 from boto3.dynamodb.conditions import Key
+from dotenv import load_dotenv
 import os
 import json
 import uuid
 from pathlib import Path
 from botocore.exceptions import ClientError
+
+load_dotenv()
 
 bucket = os.getenv("BUCKET")
 s3_client = boto3.client('s3', config=boto3.session.Config(signature_version='s3v4'))

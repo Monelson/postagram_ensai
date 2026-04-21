@@ -5,6 +5,8 @@
 ## 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 👇 ##
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 import os
 import uuid
 from dotenv import load_dotenv
@@ -39,6 +41,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 	content = {'status_code': 10422, 'message': exc_str, 'data': None}
 	return JSONResponse(content=content, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"message": str(exc)}
+    )
+
 
 class Post(BaseModel):
     title: str
@@ -59,6 +69,42 @@ bucket = os.getenv("BUCKET")
 ####################################################################################################
 
 
+def generate_presigned_url(object_name: str) -> str | None:
+    try:
+        return s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': object_name},
+            ExpiresIn=3600
+        )
+    except ClientError as e:
+        logger.error(e)
+        return None
+
+
+def format_post(item: dict) -> dict:
+    image_url = None
+    if item.get('image'):
+        image_url = generate_presigned_url(item['image'])
+    return {
+        'user': item['user'].removeprefix('USER#'),
+        'id': item['id'],
+        'title': item['title'],
+        'body': item['body'],
+        'image': image_url,
+        'labels': item.get('labels', []),
+    }
+
+
+def get_posts_by_user(user: str) -> list:
+    data = table.query(
+        KeyConditionExpression=Key('user').eq(f'USER#{user}')
+    )
+    return [format_post(item) for item in data['Items']]
+
+
+def get_all_posts_from_db() -> list:
+    data = table.scan()
+    return [format_post(item) for item in data['Items']]
 
 
 @app.post("/posts")
@@ -70,39 +116,53 @@ async def post_a_post(post: Post, authorization: str | None = Header(default=Non
     logger.info(f"body : {post.body}")
     logger.info(f"user : {authorization}")
 
+    post_id = f'{uuid.uuid4()}'
+    data = table.put_item(
+        Item={
+            'user': f'USER#{authorization}',
+            'id': f'POST#{post_id}',
+            'title': post.title,
+            'body': post.body,
+        }
+    )
+    return data
 
-    # Doit retourner le résultat de la requête la table dynamodb
-    return res
 
 @app.get("/posts")
 async def get_all_posts(user: Union[str, None] = None):
     """
-    Récupère tout les postes. 
+    Récupère tout les postes.
     - Si un user est présent dans le requête, récupère uniquement les siens
     - Si aucun user n'est présent, récupère TOUS les postes de la table !!
     """
-    if user :
+    if user:
         logger.info(f"Récupération des postes de : {user}")
-    else :
+        return get_posts_by_user(user)
+    else:
         logger.info("Récupération de tous les postes")
-     # Doit retourner une liste de posts
-    return res[""]
+        return get_all_posts_from_db()
 
-    
+
 @app.delete("/posts/{post_id}")
 async def delete_post(post_id: str, authorization: str | None = Header(default=None)):
-    # Doit retourner le résultat de la requête la table dynamodb
     logger.info(f"post id : {post_id}")
     logger.info(f"user: {authorization}")
-    # Récupération des infos du poste
+
+    user_key = f'USER#{authorization}'
+    post_key = f'POST#{post_id}'
+
+    # Récupération des infos du poste pour vérifier s'il a une image
+    response = table.get_item(Key={'user': user_key, 'id': post_key})
+    item = response.get('Item', {})
 
     # S'il y a une image on la supprime de S3
+    if item.get('image'):
+        s3_client.delete_object(Bucket=bucket, Key=item['image'])
 
     # Suppression de la ligne dans la base dynamodb
-
-    # Retourne le résultat de la requête de suppression
-    return item
-
+    return table.delete_item(
+        Key={'user': user_key, 'id': post_key}
+    )
 
 
 #################################################################################################
