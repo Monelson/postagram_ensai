@@ -8,7 +8,7 @@ import axios from 'axios'
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-axios.defaults.baseURL = "http://web-alb-740856694.us-east-1.elb.amazonaws.com"  // <------ A modifier quand vous aller tester avec vos instances EC2 et votre load balancer !!!
+axios.defaults.baseURL = "http://web-alb-1334916391.us-east-1.elb.amazonaws.com"  // <------ A modifier quand vous aller tester avec vos instances EC2 et votre load balancer !!!
 
 root.render(
   <React.StrictMode>
